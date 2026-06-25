@@ -413,17 +413,38 @@ const STAGES = [
   { key: "won", label: "Closed" },
 ];
 
-/* ---------- storage ---------- */
-const KEY = "x1crm_leads_v1";
-function loadLeads() {
+/* ---------- API helpers ---------- */
+const API = "/api/leads";
+
+async function fetchLeads() {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return SEED;
+    const res = await fetch(API);
+    if (!res.ok) throw new Error("fetch failed");
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to load leads:", e);
+    return SEED;
+  }
 }
-function saveLeads(leads) {
-  try { localStorage.setItem(KEY, JSON.stringify(leads)); } catch (e) {}
+
+async function postLead(lead) {
+  const res = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(lead),
+  });
+  if (!res.ok) throw new Error("post failed");
+  return await res.json();
+}
+
+async function patchLead(id, patch) {
+  const res = await fetch(`${API}/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error("patch failed");
+  return await res.json();
 }
 
 /* ---------- tiny atoms ---------- */
@@ -462,10 +483,10 @@ function readHash() {
 
 export default function App() {
   const [view, setView] = useState(readHash);
-  const [leads, setLeads] = useState(loadLeads);
+  const [leads, setLeads] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => { saveLeads(leads); }, [leads]);
+  useEffect(() => { fetchLeads().then(setLeads); }, []);
   useEffect(() => { const t = setTimeout(() => setLoaded(true), 60); return () => clearTimeout(t); }, []);
   useEffect(() => {
     const onHash = () => setView(readHash());
@@ -480,9 +501,20 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function addLead(lead) { setLeads((prev) => [lead, ...prev]); }
-  function updateLead(id, patch) { setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l))); }
-  function resetDemo() { setLeads(SEED); }
+  async function addLead(lead) {
+    try {
+      const saved = await postLead(lead);
+      setLeads((prev) => [saved, ...prev]);
+    } catch (e) {
+      console.error("Failed to save lead:", e);
+      setLeads((prev) => [lead, ...prev]);
+    }
+  }
+  async function updateLead(id, patch) {
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    try { await patchLead(id, patch); } catch (e) { console.error("Failed to update lead:", e); }
+  }
+  function resetDemo() { fetchLeads().then(setLeads); }
 
   return (
     <div style={{
